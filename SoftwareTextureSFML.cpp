@@ -16,7 +16,7 @@ const sf::Texture* SoftwareTextureSFML::getTexturePointer() const {
 
 // need to add texture wrapping and alternative interpolation methods
 
-sf::Vector3f SoftwareTextureSFML::getColorFromTexCoords(const sf::Vector2f& texCoords) {
+sf::Vector3f SoftwareTextureSFML::getColorFromTexCoords(const sf::Vector2f& texCoords) const {
   // currently no texture wrapping, so texCoords beyond [0,1]x[0,1] -> bad
     sf::Vector2f normalizedTexCoords;
     normalizedTexCoords.x = texCoords.x;

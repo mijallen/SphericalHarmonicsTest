@@ -43,7 +43,7 @@ public:
     static const unsigned int* getPositiveZIndexPointer();
 
   // should this be a const function?
-    sf::Vector3f getColorFromTexCoords(const sf::Vector3f& texCoords);
+    sf::Vector3f getColorFromTexCoords(const sf::Vector3f& texCoords) const;
 };
 
 #endif

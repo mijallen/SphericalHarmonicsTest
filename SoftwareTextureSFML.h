@@ -20,7 +20,7 @@ public:
     const sf::Texture* getTexturePointer() const;
 
   // should this be a const function?
-    sf::Vector3f getColorFromTexCoords(const sf::Vector2f& texCoords);
+    sf::Vector3f getColorFromTexCoords(const sf::Vector2f& texCoords) const;
 };
 
 #endif

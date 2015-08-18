@@ -166,7 +166,7 @@ const unsigned int* Cubemap::getPositiveZIndexPointer() {
     return Cubemap::positiveZIndexPointer;
 }
 
-sf::Vector3f Cubemap::getColorFromTexCoords(const sf::Vector3f& texCoords) {
+sf::Vector3f Cubemap::getColorFromTexCoords(const sf::Vector3f& texCoords) const {
     sf::Vector3f finalColor;
 
     float maximum = fabs(texCoords.x);

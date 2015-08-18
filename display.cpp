@@ -1,5 +1,6 @@
 #include "Model.h"
 #include "Cubemap.h"
+#include "SphericalFunction.h"
 
 #include <iostream>
 #include <string>
@@ -8,6 +9,30 @@
 #include <GL/gl.h>
 #include <GL/glu.h>
 #include <cmath>
+
+class SphericalFunctionCubemap : public SphericalFunction<sf::Vector3f> {
+    Cubemap& cubemap;
+public:
+    SphericalFunctionCubemap(Cubemap& cubemap) :
+        cubemap(cubemap)
+    {
+    }
+    sf::Vector3f getValue(const sf::Vector3f& v) {
+        return cubemap.getColorFromTexCoords(v);
+    }
+};
+
+class SphericalFunctionNormalVisibility : public SphericalFunction<float> {
+    const sf::Vector3f& normal;
+public:
+    SphericalFunctionNormalVisibility(const sf::Vector3f& normal) :
+        normal(normal)
+    {
+    }
+    float getValue(const sf::Vector3f& v) const {
+        return (normal.x * v.x + normal.y * v.y + normal.z * v.z);
+    }
+};
 
 void setup() {
     glClearColor(0.f, 0.f, 0.5f, 1.f);
@@ -81,6 +106,11 @@ float dotProduct(const sf::Vector3f& vectorA, const sf::Vector3f& vectorB) {
     return (vectorA.x * vectorB.x + vectorA.y * vectorB.y + vectorA.z * vectorB.z);
 }
 
+std::ostream& operator<<(std::ostream& out, const sf::Vector3f& vector) {
+    out << "<" << vector.x << "," << vector.y << "," << vector.z << ">";
+    return out;
+}
+
 // put pointers to these basis functions in an array
 // NOTE: basis functions assume provided vector is normalized!
 
@@ -89,7 +119,7 @@ float dotProduct(const sf::Vector3f& vectorA, const sf::Vector3f& vectorB) {
 #define SH_COEFF2 1.0925484305920790705433857058027 // sqrt(15/pi)/2
 #define SH_COEFF3 0.31539156525252000603089369029571 // sqrt(5/pi)/4
 
-float shBasis0(const sf::Vector3f& vector) {
+float shBasis0(const sf::Vector3<float>& vector) {
     return SH_COEFF0;
 }
 
@@ -131,6 +161,16 @@ int main() {
     modelColors = new float[3 * testModel.getVertexCount()];
     float* normalSHCoeff = new float[9 * testModel.getVertexCount()];
 
+    SphericalFunctionSubroutine<float> basis0(shBasis0);
+    SphericalFunctionSubroutine<float> basis1(shBasis1);
+    SphericalFunctionSubroutine<float> basis2(shBasis2);
+    SphericalFunctionSubroutine<float> basis3(shBasis3);
+    SphericalFunctionSubroutine<float> basis4(shBasis4);
+    SphericalFunctionSubroutine<float> basis5(shBasis5);
+    SphericalFunctionSubroutine<float> basis6(shBasis6);
+    SphericalFunctionSubroutine<float> basis7(shBasis7);
+    SphericalFunctionSubroutine<float> basis8(shBasis8);
+
   // calculate integrals of dot product function multiplied by basis functions
     std::cout << "calculating SH coefficients of normals..." << std::endl;
 
@@ -169,7 +209,7 @@ int main() {
 
         for (int thetaIter = 0; thetaIter < thetaResolution; thetaIter++) {
             float theta = thetaIter * thetaDifferential + 0.5f * thetaDifferential;
-            //theta = 2.f * acos(sqrt(1.f - (theta / M_PI)));
+            theta = 2.f * acos(sqrt(1.f - (theta / M_PI)));
             sinTheta[thetaIter] = sin(theta);
             cosTheta[thetaIter] = cos(theta);
         }
@@ -195,7 +235,8 @@ int main() {
                 sampleVector.y = cosTheta[thetaIter];
                 sampleVector.z = sinTheta[thetaIter] * cosPhi[phiIter];
 
-                float sampleWeight = dotProduct(normal, sampleVector) * sinTheta[thetaIter];
+                //float sampleWeight = dotProduct(normal, sampleVector) * sinTheta[thetaIter];
+                float sampleWeight = dotProduct(normal, sampleVector);
                 if (sampleWeight < 0.f) sampleWeight = 0.f;
 
                 normalSHCoeff[9 * iter + 0] += sampleWeight * shBasis0(sampleVector);
@@ -213,15 +254,17 @@ int main() {
   // take calculated sum, divide by number of samples for average, multiply by domain for integral
   // essentially the same as factoring out (thetaDifferential * phiDifferential) from each sample
 
-        normalSHCoeff[9 * iter + 0] *= 2.f * M_PI * M_PI / (float)(thetaResolution * phiResolution);
-        normalSHCoeff[9 * iter + 1] *= 2.f * M_PI * M_PI / (float)(thetaResolution * phiResolution);
-        normalSHCoeff[9 * iter + 2] *= 2.f * M_PI * M_PI / (float)(thetaResolution * phiResolution);
-        normalSHCoeff[9 * iter + 3] *= 2.f * M_PI * M_PI / (float)(thetaResolution * phiResolution);
-        normalSHCoeff[9 * iter + 4] *= 2.f * M_PI * M_PI / (float)(thetaResolution * phiResolution);
-        normalSHCoeff[9 * iter + 5] *= 2.f * M_PI * M_PI / (float)(thetaResolution * phiResolution);
-        normalSHCoeff[9 * iter + 6] *= 2.f * M_PI * M_PI / (float)(thetaResolution * phiResolution);
-        normalSHCoeff[9 * iter + 7] *= 2.f * M_PI * M_PI / (float)(thetaResolution * phiResolution);
-        normalSHCoeff[9 * iter + 8] *= 2.f * M_PI * M_PI / (float)(thetaResolution * phiResolution);
+        //float correctionFactor = 2.f * M_PI * M_PI / (float)(thetaResolution * phiResolution);
+        float correctionFactor = 4.f * M_PI / (float)(thetaResolution * phiResolution);
+        normalSHCoeff[9 * iter + 0] *= correctionFactor;
+        normalSHCoeff[9 * iter + 1] *= correctionFactor;
+        normalSHCoeff[9 * iter + 2] *= correctionFactor;
+        normalSHCoeff[9 * iter + 3] *= correctionFactor;
+        normalSHCoeff[9 * iter + 4] *= correctionFactor;
+        normalSHCoeff[9 * iter + 5] *= correctionFactor;
+        normalSHCoeff[9 * iter + 6] *= correctionFactor;
+        normalSHCoeff[9 * iter + 7] *= correctionFactor;
+        normalSHCoeff[9 * iter + 8] *= correctionFactor;
 
         delete[] sinTheta;
         delete[] cosTheta;
@@ -246,7 +289,11 @@ int main() {
     window.setFramerateLimit(60);
 
   // provide a directory containing images named negativeX.png, positiveY.png, etc.
-    Cubemap testCubemap("grayCube");
+    Cubemap testCubemap("gradientCube");
+
+    SphericalFunctionCubemap sphericalCubemap(testCubemap);
+    SphericalFunctionProduct<sf::Vector3f, float, sf::Vector3f> cubeBasis0(sphericalCubemap, basis0);
+    std::cout << "test: " <<  cubeBasis0.getValue(sf::Vector3f(1.f, 0.f, 0.f)).x << std::endl;
 
     sf::Vector3f cubemapSHCoeff[9];
 
@@ -279,7 +326,7 @@ int main() {
 
         for (int thetaIter = 0; thetaIter < thetaResolution; thetaIter++) {
             float theta = thetaIter * thetaDifferential + 0.5f * thetaDifferential;
-            //theta = 2.f * acos(sqrt(1.f - (theta / M_PI)));
+            theta = 2.f * acos(sqrt(1.f - (theta / M_PI)));
             sinTheta[thetaIter] = sin(theta);
             cosTheta[thetaIter] = cos(theta);
         }
@@ -297,7 +344,8 @@ int main() {
                 sampleVector.y = cosTheta[thetaIter];
                 sampleVector.z = sinTheta[thetaIter] * cosPhi[phiIter];
 
-                sf::Vector3f sampleColor = testCubemap.getColorFromTexCoords(sampleVector) * sinTheta[thetaIter];
+                //sf::Vector3f sampleColor = testCubemap.getColorFromTexCoords(sampleVector) * sinTheta[thetaIter];
+                sf::Vector3f sampleColor = testCubemap.getColorFromTexCoords(sampleVector);
 
                 cubemapSHCoeff[0] += sampleColor * shBasis0(sampleVector);
                 cubemapSHCoeff[1] += sampleColor * shBasis1(sampleVector);
@@ -311,15 +359,17 @@ int main() {
             }
         }
 
-        cubemapSHCoeff[0] *= (float)(2.f * M_PI * M_PI / (float)(thetaResolution * phiResolution));
-        cubemapSHCoeff[1] *= (float)(2.f * M_PI * M_PI / (float)(thetaResolution * phiResolution));
-        cubemapSHCoeff[2] *= (float)(2.f * M_PI * M_PI / (float)(thetaResolution * phiResolution));
-        cubemapSHCoeff[3] *= (float)(2.f * M_PI * M_PI / (float)(thetaResolution * phiResolution));
-        cubemapSHCoeff[4] *= (float)(2.f * M_PI * M_PI / (float)(thetaResolution * phiResolution));
-        cubemapSHCoeff[5] *= (float)(2.f * M_PI * M_PI / (float)(thetaResolution * phiResolution));
-        cubemapSHCoeff[6] *= (float)(2.f * M_PI * M_PI / (float)(thetaResolution * phiResolution));
-        cubemapSHCoeff[7] *= (float)(2.f * M_PI * M_PI / (float)(thetaResolution * phiResolution));
-        cubemapSHCoeff[8] *= (float)(2.f * M_PI * M_PI / (float)(thetaResolution * phiResolution));
+        //float correctionFactor = 2.f * M_PI * M_PI / (float)(thetaResolution * phiResolution);
+        float correctionFactor = 4.f * M_PI / (float)(thetaResolution * phiResolution);
+        cubemapSHCoeff[0] *= correctionFactor;
+        cubemapSHCoeff[1] *= correctionFactor;
+        cubemapSHCoeff[2] *= correctionFactor;
+        cubemapSHCoeff[3] *= correctionFactor;
+        cubemapSHCoeff[4] *= correctionFactor;
+        cubemapSHCoeff[5] *= correctionFactor;
+        cubemapSHCoeff[6] *= correctionFactor;
+        cubemapSHCoeff[7] *= correctionFactor;
+        cubemapSHCoeff[8] *= correctionFactor;
 
         delete[] sinTheta;
         delete[] cosTheta;
@@ -351,8 +401,10 @@ int main() {
      since integral will be "brought up" to 2pi x pi and average "brought up" to 1 (at max)
   */
 
-        finalColor /= (float)(2.f * M_PI * M_PI);
-        finalColor *= (float)(2.f * M_PI); // correction for dot times sine
+        finalColor /= (float)(4.f * M_PI);
+        finalColor *= 4.f; // correction for dot product
+        //finalColor /= (float)(2.f * M_PI * M_PI);
+        //finalColor *= (float)(2.f * M_PI); // correction for dot times sine
         //finalColor *= 2.5f; // no explanation, but needed when sin(theta) not used
 
         modelColors[3 * iter + 0] = finalColor.x;
