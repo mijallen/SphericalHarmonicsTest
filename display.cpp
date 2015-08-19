@@ -1,9 +1,11 @@
 #include "Model.h"
 #include "Cubemap.h"
 #include "SphericalFunction.h"
+#include "SphericalHarmonics.h"
 
 #include <iostream>
 #include <string>
+#include <vector>
 
 #include <SFML/Graphics.hpp>
 #include <GL/gl.h>
@@ -21,6 +23,7 @@ std::ostream& operator<<(std::ostream& out, const sf::Vector3f& vector) {
     return out;
 }
 
+// implementation of SphericalFunction which uses cubemap texture look-up
 class SphericalFunctionCubemap : public SphericalFunction<sf::Vector3f> {
     Cubemap& cubemap;
 public:
@@ -33,6 +36,7 @@ public:
     }
 };
 
+// implementation of SphericalFunction which uses clamped dot product of a normal vector
 class SphericalFunctionNormalVisibility : public SphericalFunction<float> {
     const sf::Vector3f& normal;
 public:
@@ -117,7 +121,7 @@ float angle = 0.f;
 
 // put pointers to these basis functions in an array
 // NOTE: basis functions assume provided vector is normalized!
-
+/*
 #define SH_COEFF0 0.28209479177387814347403972578039 // sqrt(1/pi)/2
 #define SH_COEFF1 0.48860251190291992158638462283835 // sqrt(3/pi)/2
 #define SH_COEFF2 1.0925484305920790705433857058027 // sqrt(15/pi)/2
@@ -158,13 +162,13 @@ float shBasis7(const sf::Vector3f& vector) {
 float shBasis8(const sf::Vector3f& vector) {
     return SH_COEFF2 * 0.5f * (vector.x * vector.x - vector.y * vector.y);
 }
-
+*/
 int main() {
     Model testModel("Teapot.3ds");
 
     modelColors = new float[3 * testModel.getVertexCount()];
-    float* normalSHCoeff = new float[9 * testModel.getVertexCount()];
-
+    float* normalSHCoeff = new float[BASIS_FUNCTION_COUNT * testModel.getVertexCount()];
+/*
     SphericalFunctionSubroutine<float> basis0(shBasis0);
     SphericalFunctionSubroutine<float> basis1(shBasis1);
     SphericalFunctionSubroutine<float> basis2(shBasis2);
@@ -175,6 +179,11 @@ int main() {
     SphericalFunctionSubroutine<float> basis7(shBasis7);
     SphericalFunctionSubroutine<float> basis8(shBasis8);
 
+  // test of placing SphericalFunction set into std::vector (needs operator=)
+    std::vector<SphericalFunctionProduct<float, float, float> > testVector;
+    testVector.reserve(1);
+    testVector.push_back( SphericalFunctionProduct<float, float, float>(basis0, basis1) );
+*/
     //std::cout << "integral of basis0: " << basis0.integrate(100, 200) << std::endl;
 
   // calculate integrals of dot product function multiplied by basis functions
@@ -188,7 +197,16 @@ int main() {
 
         SphericalFunctionNormalVisibility visibleFunction(normal);
 
-        SphericalFunctionProduct<float, float, float> product0(visibleFunction, basis0);
+        unsigned int thetaResolution = 25, phiResolution = 50;
+        for (int basis = 0; basis < BASIS_FUNCTION_COUNT; basis++) {
+            SphericalFunctionProduct<float, float, float> product(visibleFunction,
+                SphericalHarmonics[basis]);
+
+            normalSHCoeff[BASIS_FUNCTION_COUNT * iter + basis] =
+                product.integrate(thetaResolution, phiResolution);
+        }
+/*
+        SphericalFunctionProduct<float, float, float> product0(visibleFunction, SphericalHarmonics[0]);
         SphericalFunctionProduct<float, float, float> product1(visibleFunction, basis1);
         SphericalFunctionProduct<float, float, float> product2(visibleFunction, basis2);
         SphericalFunctionProduct<float, float, float> product3(visibleFunction, basis3);
@@ -208,6 +226,7 @@ int main() {
         normalSHCoeff[9 * iter + 6] = product6.integrate(thetaResolution, phiResolution);
         normalSHCoeff[9 * iter + 7] = product7.integrate(thetaResolution, phiResolution);
         normalSHCoeff[9 * iter + 8] = product8.integrate(thetaResolution, phiResolution);
+*/
 /*
       // left this code in for performance testing purposes, hopefully will not be in final code
         normalSHCoeff[9 * iter + 0] = 0.f;
@@ -325,13 +344,21 @@ int main() {
     //SphericalFunctionProduct<sf::Vector3f, float, sf::Vector3f> cubeBasis0(sphericalCubemap, basis0);
     //std::cout << "test: " <<  cubeBasis0.getValue(sf::Vector3f(1.f, 0.f, 0.f)).x << std::endl;
 
-    sf::Vector3f cubemapSHCoeff[9];
+    sf::Vector3f cubemapSHCoeff[BASIS_FUNCTION_COUNT];
 
   // calculate integrals of cubemap "function" multiplied by basis functions
     std::cout << "calculating SH coefficients of cubemap..." << std::endl;
 
-  // repeated code, will need a function to integrate based on a normal or cubemap
+    unsigned int thetaResolution = 25, phiResolution = 50;
+    for (int basis = 0; basis < BASIS_FUNCTION_COUNT; basis++) {
+        SphericalFunctionProduct<sf::Vector3f, float, sf::Vector3f> product(sphericalCubemap,
+            SphericalHarmonics[basis]);
 
+        cubemapSHCoeff[basis] = product.integrate(thetaResolution, phiResolution);
+    }
+
+  // repeated code, will need a function to integrate based on a normal or cubemap
+/*
     if (true) {
         SphericalFunctionProduct<sf::Vector3f, float, sf::Vector3f> product0(sphericalCubemap, basis0);
         SphericalFunctionProduct<sf::Vector3f, float, sf::Vector3f> product1(sphericalCubemap, basis1);
@@ -353,7 +380,7 @@ int main() {
         cubemapSHCoeff[6] = product6.integrate(thetaResolution, phiResolution);
         cubemapSHCoeff[7] = product7.integrate(thetaResolution, phiResolution);
         cubemapSHCoeff[8] = product8.integrate(thetaResolution, phiResolution);
-/*
+
         cubemapSHCoeff[0] = sf::Vector3f(0.f, 0.f, 0.f);
         cubemapSHCoeff[1] = sf::Vector3f(0.f, 0.f, 0.f);
         cubemapSHCoeff[2] = sf::Vector3f(0.f, 0.f, 0.f);
@@ -425,16 +452,16 @@ int main() {
         delete[] sinTheta;
         delete[] cosTheta;
         delete[] sinPhi;
-        delete[] cosPhi;*/
+        delete[] cosPhi;
     }
-
+*/
   // perform dot product of coefficients to calculate per-vertex colors
     std::cout << "using coefficients to calculate colors..." << std::endl;
 
   // should move this to program loop, so real-time rotation can occur
     for (int iter = 0; iter < testModel.getVertexCount(); iter++) {
         sf::Vector3f finalColor(0.f, 0.f, 0.f);
-
+/*
         finalColor += cubemapSHCoeff[0] * normalSHCoeff[9 * iter + 0];
         finalColor += cubemapSHCoeff[1] * normalSHCoeff[9 * iter + 1];
         finalColor += cubemapSHCoeff[2] * normalSHCoeff[9 * iter + 2];
@@ -444,7 +471,10 @@ int main() {
         finalColor += cubemapSHCoeff[6] * normalSHCoeff[9 * iter + 6];
         finalColor += cubemapSHCoeff[7] * normalSHCoeff[9 * iter + 7];
         finalColor += cubemapSHCoeff[8] * normalSHCoeff[9 * iter + 8];
-
+*/
+        for (int basis = 0; basis < BASIS_FUNCTION_COUNT; basis++) {
+            finalColor += cubemapSHCoeff[basis] * normalSHCoeff[BASIS_FUNCTION_COUNT * iter + basis];
+        }
   /*
      dot product of coefficients is approximation of dot product times cubemap functions
      to get average color for vertex, divide by domain of integral (2pi x pi)

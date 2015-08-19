@@ -7,6 +7,8 @@
 // everything must be defined in this header, no cpp file
 // refer to http://stackoverflow.com/questions/1353973/c-template-linking-error for why
 
+template <typename ReturnType> class SphericalFunctionSubroutine;
+
 // abstract base class for spherical functions
 template <typename ReturnType>
 class SphericalFunction {
@@ -23,6 +25,7 @@ class SphericalFunctionSubroutine : public SphericalFunction<ReturnType> {
 public:
     SphericalFunctionSubroutine(ReturnType (*subroutine)(const sf::Vector3<float>&));
     ReturnType getValue(const sf::Vector3<float>& v);
+    SphericalFunctionSubroutine<ReturnType>& operator=(const SphericalFunctionSubroutine<ReturnType>&);
 };
 
 // spherical function based on product of two spherical functions
@@ -34,6 +37,8 @@ public:
     SphericalFunctionProduct(SphericalFunction<LeftType>& leftFunction,
         SphericalFunction<RightType>& rightFunction);
     ReturnType getValue(const sf::Vector3<float>& v);
+    SphericalFunctionProduct<LeftType, RightType, ReturnType>& operator=(
+        const SphericalFunctionProduct<LeftType, RightType, ReturnType>&);
 };
 
 // implementation
@@ -70,6 +75,12 @@ ReturnType SphericalFunction<ReturnType>::integrate(unsigned int thetaResolution
     ReturnType integral;
     integral *= 0.f;
 
+  /*
+     NOTE: using a look-up table for sin(theta), cos(theta), sin(phi), cos(phi)
+           provides a significant performance improvement; using the cartesian forms
+           of spherical harmonic functions will forgo need to use sin/cos (x, x*y, etc.).
+  */
+
     float* sinTheta = new float[thetaResolution];
     float* cosTheta = new float[thetaResolution];
     float* sinPhi = new float[phiResolution];
@@ -78,7 +89,7 @@ ReturnType SphericalFunction<ReturnType>::integrate(unsigned int thetaResolution
   // precomputed look-up tables for cos(theta) and sin(theta)
     for (int thetaIter = 0; thetaIter < thetaResolution; thetaIter++) {
         float theta = thetaIter * thetaDifferential + 0.5f * thetaDifferential;
-        //theta = 2.f * acos(sqrt(1.f - (theta / M_PI)));
+        theta = 2.f * acos(sqrt(1.f - (theta / M_PI))); // bias theta away from poles
         sinTheta[thetaIter] = sin(theta);
         cosTheta[thetaIter] = cos(theta);
     }
@@ -108,7 +119,8 @@ ReturnType SphericalFunction<ReturnType>::integrate(unsigned int thetaResolution
             sampleVector.y = cosTheta[thetaIter];
             sampleVector.z = sinTheta[thetaIter] * cosPhi[phiIter];
 
-            integral += this->getValue(sampleVector) * sinTheta[thetaIter];
+            //integral += this->getValue(sampleVector) * sinTheta[thetaIter]; // for unbiased theta
+            integral += this->getValue(sampleVector); // for biased theta
         }
     }
 
@@ -116,7 +128,8 @@ ReturnType SphericalFunction<ReturnType>::integrate(unsigned int thetaResolution
     integral *= 1.f / (float)(thetaResolution * phiResolution);
 
   // compute integral of spherical function
-    float domain = 2.f * M_PI * M_PI;
+    //float domain = 2.f * M_PI * M_PI; // for unbiased theta
+    float domain = 4.f * M_PI; // for biased theta
     integral *= domain;
 
     delete[] sinTheta;
@@ -142,6 +155,12 @@ ReturnType SphericalFunctionSubroutine<ReturnType>::getValue(const sf::Vector3<f
     return this->subroutine(v);
 }
 
+template <typename ReturnType>
+SphericalFunctionSubroutine<ReturnType>&
+SphericalFunctionSubroutine<ReturnType>::operator=(const SphericalFunctionSubroutine<ReturnType>& copy) {
+    this->subroutine = copy.subroutine;
+}
+
 // spherical function product methods
 
 template <typename LeftType, typename RightType, typename ReturnType>
@@ -159,6 +178,15 @@ ReturnType SphericalFunctionProduct<LeftType, RightType, ReturnType>::getValue(
     LeftType left = leftFunction.getValue(v);
     RightType right = rightFunction.getValue(v);
     return (left * right); // must evaluate to ReturnType!
+}
+
+template <typename LeftType, typename RightType, typename ReturnType>
+SphericalFunctionProduct<LeftType, RightType, ReturnType>&
+SphericalFunctionProduct<LeftType, RightType, ReturnType>::operator=(
+    const SphericalFunctionProduct<LeftType, RightType, ReturnType>& copy)
+{
+    this->leftFunction = copy.leftFunction;
+    this->rightFunction = copy.rightFunction;
 }
 
 #endif
