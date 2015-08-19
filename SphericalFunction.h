@@ -2,6 +2,7 @@
 #define _SPHERICALFUNCTION_H_
 
 #include <SFML/System/Vector3.hpp>
+#include <cmath>
 
 // everything must be defined in this header, no cpp file
 // refer to http://stackoverflow.com/questions/1353973/c-template-linking-error for why
@@ -12,7 +13,7 @@ class SphericalFunction {
 public:
     virtual ReturnType getValue(const sf::Vector3<float>& v) = 0;
     ReturnType operator()(const sf::Vector3f&);
-    ReturnType integrate();
+    ReturnType integrate(unsigned int thetaResolution, unsigned int phiResolution);
 };
 
 // spherical function based on user-provided function call
@@ -44,11 +45,86 @@ ReturnType SphericalFunction<ReturnType>::operator()(const sf::Vector3f& v) {
     return this->getValue(v);
 }
 
+/*
+   Performance Testing:
+   Processor:
+    -Intel Core i5-2450M, 2.5GHz
+    -running on single thread
+
+   for Teapot.3ds normal visibilities, 25x50 per normal
+    -SphericalFunction integrate naive: 120s
+    -inline optimized: 3s (with some uncertainty)
+    -inline naive: 15s
+    -SphericalFunction integrate optimized: 12s (prediction: 24s)
+
+   Note: optimization replaces sin/cos with precomputed look-ups
+*/
+
 template <typename ReturnType>
-ReturnType SphericalFunction<ReturnType>::integrate() { // unimplemented
-    ReturnType output;
-    output *= 0.f;
-    return output;
+ReturnType SphericalFunction<ReturnType>::integrate(unsigned int thetaResolution,
+    unsigned int phiResolution)
+{
+    float thetaDifferential = M_PI / (float)thetaResolution;
+    float phiDifferential = 2.f * M_PI / (float)phiResolution;
+
+    ReturnType integral;
+    integral *= 0.f;
+
+    float* sinTheta = new float[thetaResolution];
+    float* cosTheta = new float[thetaResolution];
+    float* sinPhi = new float[phiResolution];
+    float* cosPhi = new float[phiResolution];
+
+  // precomputed look-up tables for cos(theta) and sin(theta)
+    for (int thetaIter = 0; thetaIter < thetaResolution; thetaIter++) {
+        float theta = thetaIter * thetaDifferential + 0.5f * thetaDifferential;
+        //theta = 2.f * acos(sqrt(1.f - (theta / M_PI)));
+        sinTheta[thetaIter] = sin(theta);
+        cosTheta[thetaIter] = cos(theta);
+    }
+
+  // precomputed look-up tables for cos(phi) and sin(phi)
+    for (int phiIter = 0; phiIter < phiResolution; phiIter++) {
+        float phi = phiIter * phiDifferential + 0.5f * phiDifferential;
+        sinPhi[phiIter] = sin(phi);
+        cosPhi[phiIter] = cos(phi);
+    }
+
+  // need to compute integral of f(theta,phi) * sin(theta) over domain [0,pi]x[0,2pi]
+  // to get average radius, divide by 4pi, since it is the integral of sin(theta) on same domain
+
+    for (int thetaIter = 0; thetaIter < thetaResolution; thetaIter++) {
+        //float theta = thetaIter * thetaDifferential + 0.5f * thetaDifferential;
+        //theta = 2.f * acos(sqrt(1.f - (theta / M_PI)));
+
+        for (int phiIter = 0; phiIter < phiResolution; phiIter++) {
+            //float phi = phiIter * phiDifferential + 0.5f * phiDifferential;
+
+            sf::Vector3f sampleVector;
+            //sampleVector.x = sin(theta) * sin(phi);
+            //sampleVector.y = cos(theta);
+            //sampleVector.z = sin(theta) * cos(phi);
+            sampleVector.x = sinTheta[thetaIter] * sinPhi[phiIter];
+            sampleVector.y = cosTheta[thetaIter];
+            sampleVector.z = sinTheta[thetaIter] * cosPhi[phiIter];
+
+            integral += this->getValue(sampleVector) * sinTheta[thetaIter];
+        }
+    }
+
+  // compute average of spherical function
+    integral *= 1.f / (float)(thetaResolution * phiResolution);
+
+  // compute integral of spherical function
+    float domain = 2.f * M_PI * M_PI;
+    integral *= domain;
+
+    delete[] sinTheta;
+    delete[] cosTheta;
+    delete[] sinPhi;
+    delete[] cosPhi;
+
+    return integral;
 }
 
 // spherical function subroutine methods

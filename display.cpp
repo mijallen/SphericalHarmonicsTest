@@ -10,6 +10,17 @@
 #include <GL/glu.h>
 #include <cmath>
 
+// additional Vector3f functions
+
+float dotProduct(const sf::Vector3f& vectorA, const sf::Vector3f& vectorB) {
+    return (vectorA.x * vectorB.x + vectorA.y * vectorB.y + vectorA.z * vectorB.z);
+}
+
+std::ostream& operator<<(std::ostream& out, const sf::Vector3f& vector) {
+    out << "<" << vector.x << "," << vector.y << "," << vector.z << ">";
+    return out;
+}
+
 class SphericalFunctionCubemap : public SphericalFunction<sf::Vector3f> {
     Cubemap& cubemap;
 public:
@@ -29,8 +40,10 @@ public:
         normal(normal)
     {
     }
-    float getValue(const sf::Vector3f& v) const {
-        return (normal.x * v.x + normal.y * v.y + normal.z * v.z);
+    float getValue(const sf::Vector3f& v) {
+        float visibility = dotProduct(normal, v);
+        if (visibility < 0.f) visibility = 0.f;
+        return visibility;
     }
 };
 
@@ -102,15 +115,6 @@ void drawCubemap(const Cubemap& cubemap) {
 
 float angle = 0.f;
 
-float dotProduct(const sf::Vector3f& vectorA, const sf::Vector3f& vectorB) {
-    return (vectorA.x * vectorB.x + vectorA.y * vectorB.y + vectorA.z * vectorB.z);
-}
-
-std::ostream& operator<<(std::ostream& out, const sf::Vector3f& vector) {
-    out << "<" << vector.x << "," << vector.y << "," << vector.z << ">";
-    return out;
-}
-
 // put pointers to these basis functions in an array
 // NOTE: basis functions assume provided vector is normalized!
 
@@ -171,6 +175,8 @@ int main() {
     SphericalFunctionSubroutine<float> basis7(shBasis7);
     SphericalFunctionSubroutine<float> basis8(shBasis8);
 
+    //std::cout << "integral of basis0: " << basis0.integrate(100, 200) << std::endl;
+
   // calculate integrals of dot product function multiplied by basis functions
     std::cout << "calculating SH coefficients of normals..." << std::endl;
 
@@ -180,6 +186,30 @@ int main() {
         normal.y = testModel.getNormalPointer()[3 * iter + 1];
         normal.z = testModel.getNormalPointer()[3 * iter + 2];
 
+        SphericalFunctionNormalVisibility visibleFunction(normal);
+
+        SphericalFunctionProduct<float, float, float> product0(visibleFunction, basis0);
+        SphericalFunctionProduct<float, float, float> product1(visibleFunction, basis1);
+        SphericalFunctionProduct<float, float, float> product2(visibleFunction, basis2);
+        SphericalFunctionProduct<float, float, float> product3(visibleFunction, basis3);
+        SphericalFunctionProduct<float, float, float> product4(visibleFunction, basis4);
+        SphericalFunctionProduct<float, float, float> product5(visibleFunction, basis5);
+        SphericalFunctionProduct<float, float, float> product6(visibleFunction, basis6);
+        SphericalFunctionProduct<float, float, float> product7(visibleFunction, basis7);
+        SphericalFunctionProduct<float, float, float> product8(visibleFunction, basis8);
+
+        unsigned int thetaResolution = 25, phiResolution = 50;
+        normalSHCoeff[9 * iter + 0] = product0.integrate(thetaResolution, phiResolution);
+        normalSHCoeff[9 * iter + 1] = product1.integrate(thetaResolution, phiResolution);
+        normalSHCoeff[9 * iter + 2] = product2.integrate(thetaResolution, phiResolution);
+        normalSHCoeff[9 * iter + 3] = product3.integrate(thetaResolution, phiResolution);
+        normalSHCoeff[9 * iter + 4] = product4.integrate(thetaResolution, phiResolution);
+        normalSHCoeff[9 * iter + 5] = product5.integrate(thetaResolution, phiResolution);
+        normalSHCoeff[9 * iter + 6] = product6.integrate(thetaResolution, phiResolution);
+        normalSHCoeff[9 * iter + 7] = product7.integrate(thetaResolution, phiResolution);
+        normalSHCoeff[9 * iter + 8] = product8.integrate(thetaResolution, phiResolution);
+/*
+      // left this code in for performance testing purposes, hopefully will not be in final code
         normalSHCoeff[9 * iter + 0] = 0.f;
         normalSHCoeff[9 * iter + 1] = 0.f;
         normalSHCoeff[9 * iter + 2] = 0.f;
@@ -200,16 +230,16 @@ int main() {
         float* cosTheta = new float[thetaResolution];
         float* sinPhi = new float[phiResolution];
         float* cosPhi = new float[phiResolution];
-
+*/
   /*
      NOTE: using a look-up table for sin(theta), cos(theta), sin(phi), cos(phi)
            provides a significant performance improvement; using the cartesian forms
            of spherical harmonic functions will forgo need to use sin/cos (x, x*y, etc.).
   */
-
+/*
         for (int thetaIter = 0; thetaIter < thetaResolution; thetaIter++) {
             float theta = thetaIter * thetaDifferential + 0.5f * thetaDifferential;
-            theta = 2.f * acos(sqrt(1.f - (theta / M_PI)));
+            //theta = 2.f * acos(sqrt(1.f - (theta / M_PI)));
             sinTheta[thetaIter] = sin(theta);
             cosTheta[thetaIter] = cos(theta);
         }
@@ -235,8 +265,8 @@ int main() {
                 sampleVector.y = cosTheta[thetaIter];
                 sampleVector.z = sinTheta[thetaIter] * cosPhi[phiIter];
 
-                //float sampleWeight = dotProduct(normal, sampleVector) * sinTheta[thetaIter];
-                float sampleWeight = dotProduct(normal, sampleVector);
+                float sampleWeight = dotProduct(normal, sampleVector) * sinTheta[thetaIter];
+                //float sampleWeight = dotProduct(normal, sampleVector) * sin(theta);
                 if (sampleWeight < 0.f) sampleWeight = 0.f;
 
                 normalSHCoeff[9 * iter + 0] += sampleWeight * shBasis0(sampleVector);
@@ -254,8 +284,8 @@ int main() {
   // take calculated sum, divide by number of samples for average, multiply by domain for integral
   // essentially the same as factoring out (thetaDifferential * phiDifferential) from each sample
 
-        //float correctionFactor = 2.f * M_PI * M_PI / (float)(thetaResolution * phiResolution);
-        float correctionFactor = 4.f * M_PI / (float)(thetaResolution * phiResolution);
+        float correctionFactor = 2.f * M_PI * M_PI / (float)(thetaResolution * phiResolution);
+        //float correctionFactor = 4.f * M_PI / (float)(thetaResolution * phiResolution);
         normalSHCoeff[9 * iter + 0] *= correctionFactor;
         normalSHCoeff[9 * iter + 1] *= correctionFactor;
         normalSHCoeff[9 * iter + 2] *= correctionFactor;
@@ -269,7 +299,7 @@ int main() {
         delete[] sinTheta;
         delete[] cosTheta;
         delete[] sinPhi;
-        delete[] cosPhi;
+        delete[] cosPhi;*/
     }
 
   /*
@@ -292,8 +322,8 @@ int main() {
     Cubemap testCubemap("gradientCube");
 
     SphericalFunctionCubemap sphericalCubemap(testCubemap);
-    SphericalFunctionProduct<sf::Vector3f, float, sf::Vector3f> cubeBasis0(sphericalCubemap, basis0);
-    std::cout << "test: " <<  cubeBasis0.getValue(sf::Vector3f(1.f, 0.f, 0.f)).x << std::endl;
+    //SphericalFunctionProduct<sf::Vector3f, float, sf::Vector3f> cubeBasis0(sphericalCubemap, basis0);
+    //std::cout << "test: " <<  cubeBasis0.getValue(sf::Vector3f(1.f, 0.f, 0.f)).x << std::endl;
 
     sf::Vector3f cubemapSHCoeff[9];
 
@@ -303,6 +333,27 @@ int main() {
   // repeated code, will need a function to integrate based on a normal or cubemap
 
     if (true) {
+        SphericalFunctionProduct<sf::Vector3f, float, sf::Vector3f> product0(sphericalCubemap, basis0);
+        SphericalFunctionProduct<sf::Vector3f, float, sf::Vector3f> product1(sphericalCubemap, basis1);
+        SphericalFunctionProduct<sf::Vector3f, float, sf::Vector3f> product2(sphericalCubemap, basis2);
+        SphericalFunctionProduct<sf::Vector3f, float, sf::Vector3f> product3(sphericalCubemap, basis3);
+        SphericalFunctionProduct<sf::Vector3f, float, sf::Vector3f> product4(sphericalCubemap, basis4);
+        SphericalFunctionProduct<sf::Vector3f, float, sf::Vector3f> product5(sphericalCubemap, basis5);
+        SphericalFunctionProduct<sf::Vector3f, float, sf::Vector3f> product6(sphericalCubemap, basis6);
+        SphericalFunctionProduct<sf::Vector3f, float, sf::Vector3f> product7(sphericalCubemap, basis7);
+        SphericalFunctionProduct<sf::Vector3f, float, sf::Vector3f> product8(sphericalCubemap, basis8);
+
+        unsigned int thetaResolution = 25, phiResolution = 50;
+        cubemapSHCoeff[0] = product0.integrate(thetaResolution, phiResolution);
+        cubemapSHCoeff[1] = product1.integrate(thetaResolution, phiResolution);
+        cubemapSHCoeff[2] = product2.integrate(thetaResolution, phiResolution);
+        cubemapSHCoeff[3] = product3.integrate(thetaResolution, phiResolution);
+        cubemapSHCoeff[4] = product4.integrate(thetaResolution, phiResolution);
+        cubemapSHCoeff[5] = product5.integrate(thetaResolution, phiResolution);
+        cubemapSHCoeff[6] = product6.integrate(thetaResolution, phiResolution);
+        cubemapSHCoeff[7] = product7.integrate(thetaResolution, phiResolution);
+        cubemapSHCoeff[8] = product8.integrate(thetaResolution, phiResolution);
+/*
         cubemapSHCoeff[0] = sf::Vector3f(0.f, 0.f, 0.f);
         cubemapSHCoeff[1] = sf::Vector3f(0.f, 0.f, 0.f);
         cubemapSHCoeff[2] = sf::Vector3f(0.f, 0.f, 0.f);
@@ -374,12 +425,13 @@ int main() {
         delete[] sinTheta;
         delete[] cosTheta;
         delete[] sinPhi;
-        delete[] cosPhi;
+        delete[] cosPhi;*/
     }
 
   // perform dot product of coefficients to calculate per-vertex colors
     std::cout << "using coefficients to calculate colors..." << std::endl;
 
+  // should move this to program loop, so real-time rotation can occur
     for (int iter = 0; iter < testModel.getVertexCount(); iter++) {
         sf::Vector3f finalColor(0.f, 0.f, 0.f);
 
