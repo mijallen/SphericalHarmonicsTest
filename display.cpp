@@ -163,8 +163,75 @@ float shBasis8(const sf::Vector3f& vector) {
     return SH_COEFF2 * 0.5f * (vector.x * vector.x - vector.y * vector.y);
 }
 */
-int main() {
-    Model testModel("Teapot.3ds");
+
+/*
+   current function for getting per-vertex colors based on spherical harmonics lighting
+   takes normal coefficients and cubemap coefficients and performs dot product
+   which happens after appropriate cubemap coefficient rotation operations
+*/
+void calculateModelColors(unsigned int vertexCount, float* modelColors,
+    const float* normalSHCoeff, const sf::Vector3f* cubemapSHCoeff)
+{
+    for (int iter = 0; iter < vertexCount; iter++) {
+        sf::Vector3f vertexColor(0.f, 0.f, 0.f);
+
+        sf::Vector3f rotatedCubemapSHCoeff[BASIS_FUNCTION_COUNT];
+
+      // needed because cos/sin evaluate to double and fail Vector3 template matching
+      // but also creates slight gain in efficiency, so that's cool!
+        float cosAngle = cos(angle);
+        float sinAngle = sin(angle);
+        float cosAngle2 = cos(2.f * angle);
+        float sinAngle2 = sin(2.f * angle);
+
+      /*
+         rotation currently assumes there are exactly 9 basis functions (most likely true)
+         also, it only allows rotation around Z axis right now
+         will need the +/-90 degree rotations about X axis for ZYZ rotations (Z,X-90,Z,X+90,Z)
+         also, will want better organization to perform rotations easier
+      */
+        rotatedCubemapSHCoeff[0] = cubemapSHCoeff[0];
+
+        rotatedCubemapSHCoeff[1] = cosAngle * cubemapSHCoeff[1] + sinAngle * cubemapSHCoeff[3];
+        rotatedCubemapSHCoeff[2] = cubemapSHCoeff[2];
+        rotatedCubemapSHCoeff[3] = -sinAngle * cubemapSHCoeff[1] + cosAngle * cubemapSHCoeff[3];
+
+        rotatedCubemapSHCoeff[4] = cosAngle2 * cubemapSHCoeff[4] + sinAngle2 * cubemapSHCoeff[8];
+        rotatedCubemapSHCoeff[5] = cosAngle * cubemapSHCoeff[5] + sinAngle * cubemapSHCoeff[7];
+        rotatedCubemapSHCoeff[6] = cubemapSHCoeff[6];
+        rotatedCubemapSHCoeff[7] = -sinAngle * cubemapSHCoeff[5] + cosAngle * cubemapSHCoeff[7];
+        rotatedCubemapSHCoeff[8] = -sinAngle2 * cubemapSHCoeff[4] + cosAngle2 * cubemapSHCoeff[8];
+
+      // the per-color-channel dot product of cubemap coefficients and visibility coefficients
+        for (int basis = 0; basis < BASIS_FUNCTION_COUNT; basis++) {
+            vertexColor += rotatedCubemapSHCoeff[basis] *
+                normalSHCoeff[BASIS_FUNCTION_COUNT * iter + basis];
+        }
+  /*
+     dot product of coefficients is approximation of dot product times cubemap functions
+     to get average color for vertex, divide by domain of integral (2pi x pi)
+     however, average of dot product times cubemap will be too dark (most samples are zero)
+     integral of dot product times sine is pi, so multiplying by 2pi fixes this
+     since integral will be "brought up" to 2pi x pi and average "brought up" to 1 (at max)
+  */
+
+        vertexColor /= (float)(4.f * M_PI);
+        vertexColor *= 4.f; // correction for dot product
+
+        modelColors[3 * iter + 0] = vertexColor.x;
+        modelColors[3 * iter + 1] = vertexColor.y;
+        modelColors[3 * iter + 2] = vertexColor.z;
+    }
+}
+
+int main(int argc, char** argv) {
+    std::string modelPath = "Teapot.3ds";
+    if (argc > 1) modelPath = argv[1];
+
+    std::string cubemapDir = "gradientCube";
+    if (argc > 2) cubemapDir = argv[2];
+
+    Model testModel(modelPath);
 
     modelColors = new float[3 * testModel.getVertexCount()];
     float* normalSHCoeff = new float[BASIS_FUNCTION_COUNT * testModel.getVertexCount()];
@@ -197,7 +264,7 @@ int main() {
 
         SphericalFunctionNormalVisibility visibleFunction(normal);
 
-        unsigned int thetaResolution = 25, phiResolution = 50;
+        unsigned int thetaResolution = 16, phiResolution = 32;
         for (int basis = 0; basis < BASIS_FUNCTION_COUNT; basis++) {
             SphericalFunctionProduct<float, float, float> product(visibleFunction,
                 SphericalHarmonics[basis]);
@@ -338,7 +405,7 @@ int main() {
     window.setFramerateLimit(60);
 
   // provide a directory containing images named negativeX.png, positiveY.png, etc.
-    Cubemap testCubemap("gradientCube");
+    Cubemap testCubemap(cubemapDir);
 
     SphericalFunctionCubemap sphericalCubemap(testCubemap);
     //SphericalFunctionProduct<sf::Vector3f, float, sf::Vector3f> cubeBasis0(sphericalCubemap, basis0);
@@ -349,7 +416,7 @@ int main() {
   // calculate integrals of cubemap "function" multiplied by basis functions
     std::cout << "calculating SH coefficients of cubemap..." << std::endl;
 
-    unsigned int thetaResolution = 25, phiResolution = 50;
+    unsigned int thetaResolution = 256, phiResolution = 512;
     for (int basis = 0; basis < BASIS_FUNCTION_COUNT; basis++) {
         SphericalFunctionProduct<sf::Vector3f, float, sf::Vector3f> product(sphericalCubemap,
             SphericalHarmonics[basis]);
@@ -456,11 +523,11 @@ int main() {
     }
 */
   // perform dot product of coefficients to calculate per-vertex colors
-    std::cout << "using coefficients to calculate colors..." << std::endl;
+    //std::cout << "using coefficients to calculate colors..." << std::endl;
 
   // should move this to program loop, so real-time rotation can occur
-    for (int iter = 0; iter < testModel.getVertexCount(); iter++) {
-        sf::Vector3f finalColor(0.f, 0.f, 0.f);
+    //for (int iter = 0; iter < testModel.getVertexCount(); iter++) {
+        //sf::Vector3f finalColor(0.f, 0.f, 0.f);
 /*
         finalColor += cubemapSHCoeff[0] * normalSHCoeff[9 * iter + 0];
         finalColor += cubemapSHCoeff[1] * normalSHCoeff[9 * iter + 1];
@@ -472,9 +539,9 @@ int main() {
         finalColor += cubemapSHCoeff[7] * normalSHCoeff[9 * iter + 7];
         finalColor += cubemapSHCoeff[8] * normalSHCoeff[9 * iter + 8];
 */
-        for (int basis = 0; basis < BASIS_FUNCTION_COUNT; basis++) {
-            finalColor += cubemapSHCoeff[basis] * normalSHCoeff[BASIS_FUNCTION_COUNT * iter + basis];
-        }
+        //for (int basis = 0; basis < BASIS_FUNCTION_COUNT; basis++) {
+            //finalColor += cubemapSHCoeff[basis] * normalSHCoeff[BASIS_FUNCTION_COUNT * iter + basis];
+        //}
   /*
      dot product of coefficients is approximation of dot product times cubemap functions
      to get average color for vertex, divide by domain of integral (2pi x pi)
@@ -483,16 +550,16 @@ int main() {
      since integral will be "brought up" to 2pi x pi and average "brought up" to 1 (at max)
   */
 
-        finalColor /= (float)(4.f * M_PI);
-        finalColor *= 4.f; // correction for dot product
+        //finalColor /= (float)(4.f * M_PI);
+        //finalColor *= 4.f; // correction for dot product
         //finalColor /= (float)(2.f * M_PI * M_PI);
         //finalColor *= (float)(2.f * M_PI); // correction for dot times sine
         //finalColor *= 2.5f; // no explanation, but needed when sin(theta) not used
 
-        modelColors[3 * iter + 0] = finalColor.x;
-        modelColors[3 * iter + 1] = finalColor.y;
-        modelColors[3 * iter + 2] = finalColor.z;
-    }
+        //modelColors[3 * iter + 0] = finalColor.x;
+        //modelColors[3 * iter + 1] = finalColor.y;
+        //modelColors[3 * iter + 2] = finalColor.z;
+    //}
 /*
     // software texture test
     SoftwareTextureSFML texture("pngtest.png");
@@ -508,14 +575,17 @@ int main() {
             if (event.type == sf::Event::Closed) window.close();
         }
 
+        calculateModelColors(testModel.getVertexCount(), modelColors, normalSHCoeff, cubemapSHCoeff);
+        angle += 0.01f;
+
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
         glBindTexture(GL_TEXTURE_2D, 0);
 
         glLoadIdentity();
         glTranslatef(0.f, 0.f, -2.f);
-        glRotatef(30.f, 1.f, 0.f, 0.f);
-        glRotatef(angle, 0.f, 1.f, 0.f);
+        //glRotatef(30.f, 1.f, 0.f, 0.f);
+        //glRotatef(angle, 0.f, 1.f, 0.f);
         glScalef(0.01f, 0.01f, 0.01f);
 
         drawModel(testModel);
@@ -524,8 +594,12 @@ int main() {
   // also, its faces just looks weird at an angle
 
         glLoadIdentity();
-        glRotatef(30.f, 1.f, 0.f, 0.f);
-        glRotatef(angle, 0.f, 1.f, 0.f); angle += 1.f;
+        //glRotatef(30.f, 1.f, 0.f, 0.f);
+        //glRotatef(angle, 0.f, 1.f, 0.f); angle += 1.f;
+
+      // rotation now only needed for cubemap, mirrors coefficient rotation
+      // needs to be converted to degrees for OpenGL's rotate function
+        glRotatef(angle * 180.f / M_PI, 0.f, 0.f, 1.f);
         glScalef(5.f, 5.f, 5.f);
 
         drawCubemap(testCubemap);
